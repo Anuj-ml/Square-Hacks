@@ -1,0 +1,137 @@
+[
+  {
+    "id": "respiratory_surge_protocol",
+    "content": "Respiratory Surge Response Protocol: During high Air Quality Index (AQI) events (>200), hospitals should anticipate a 30-50% increase in respiratory emergency cases within 24-48 hours. Key actions include: 1) Increase oxygen cylinder inventory by 40%, 2) Deploy additional nurses to Emergency Room (ER) and Respiratory Ward, 3) Activate telemedicine consultations to reduce ER load, 4) Send SMS alerts to chronic respiratory patients advising them to stay indoors and use prescribed inhalers, 5) Coordinate with nearby hospitals for patient diversion if capacity exceeds 85%.",
+    "metadata": {
+      "category": "emergency_protocols",
+      "department": "respiratory",
+      "tags": ["surge", "pollution", "AQI", "respiratory"]
+    }
+  },
+  {
+    "id": "bed_management_surge",
+    "content": "Hospital Bed Management During Surge Events: When bed occupancy reaches 75%, implement the following: 1) Expedite discharge of stable patients with home care instructions, 2) Convert recovery rooms to overflow beds (adds 15-20 beds), 3) Move elective surgery patients to partner facilities, 4) Set up temporary triage area in hospital lobby for minor cases, 5) Activate on-call staff to reduce waiting times. Critical threshold: Above 90% occupancy, activate mutual aid agreements with neighboring hospitals.",
+    "metadata": {
+      "category": "resource_management",
+      "department": "administration",
+      "tags": ["beds", "capacity", "surge", "overflow"]
+    }
+  },
+  {
+    "id": "staff_fatigue_management",
+    "content": "Staff Fatigue Management Protocol: Extended surge events (>48 hours) cause significant staff burnout. Mitigation strategies: 1) Limit consecutive shifts to 12 hours maximum, 2) Provide 8-hour rest breaks between shifts, 3) Deploy float nurses from non-critical departments, 4) Offer mental health support and stress counseling, 5) Rotate staff between high-stress (ER) and low-stress areas, 6) Provide meals and hydration stations. Monitor fatigue scores: Above 7/10 requires mandatory rest.",
+    "metadata": {
+      "category": "staff_management",
+      "department": "human_resources",
+      "tags": ["staff", "fatigue", "burnout", "shifts"]
+    }
+  },
+  {
+    "id": "pollution_patient_advisory",
+    "content": "Patient Advisory for High Pollution Events: When AQI exceeds 300, send multilingual advisories (English/Hindi/Marathi) to registered patients with these conditions: asthma, COPD, heart disease, elderly (>65 years), children (<5 years). Message should include: 1) Stay indoors with windows closed, 2) Use air purifiers if available, 3) Wear N95 masks if going outside is unavoidable, 4) Keep rescue inhalers accessible, 5) Seek immediate care for breathlessness, chest pain, or persistent cough. Provide list of 3 nearest hospitals with availability.",
+    "metadata": {
+      "category": "patient_education",
+      "department": "public_health",
+      "tags": ["pollution", "patient_advisory", "AQI", "preventive_care"]
+    }
+  },
+  {
+    "id": "oxygen_inventory_management",
+    "content": "Medical Oxygen Supply Chain Management: Standard oxygen consumption is 20-30 cylinders per day. During respiratory surges, consumption increases to 50-80 cylinders daily. Maintain minimum 3-day buffer stock (150 cylinders). Reorder triggers: 1) When stock falls below 100 cylinders, 2) When AQI forecast predicts >200 for next 48 hours, 3) When ER admissions increase >25% day-over-day. Emergency procurement lead time: 6 hours for local suppliers, 24 hours for regional distributors. Cost: ₹8,000 per cylinder (including delivery).",
+    "metadata": {
+      "category": "supply_chain",
+      "department": "logistics",
+      "tags": ["oxygen", "inventory", "procurement", "respiratory"]
+    }
+  },
+  {
+    "id": "dengue_outbreak_response",
+    "content": "Dengue Fever Outbreak Management: Dengue outbreaks typically occur during monsoon season (June-September) in Mumbai. Early warning signs include: 1) 20% increase in fever cases, 2) Positive dengue serology in >3 patients per day, 3) Reports from municipal health department. Response protocol: 1) Set up dedicated dengue ward with mosquito nets, 2) Stock platelet concentrates and IV fluids, 3) Deploy infectious disease specialists, 4) Implement strict vector control in hospital premises, 5) Coordinate with blood bank for platelet donations. Typical outbreak duration: 4-6 weeks.",
+    "metadata": {
+      "category": "infectious_disease",
+      "department": "epidemiology",
+      "tags": ["dengue", "outbreak", "monsoon", "fever"]
+    }
+  },
+  {
+    "id": "festival_trauma_surge",
+    "content": "Festival-Related Trauma Surge (Diwali/Holi): Major festivals cause 40-60% increase in trauma cases including: burns (firecrackers), road traffic accidents (increased travel), alcohol-related injuries, and falls. Pre-festival preparation (48 hours before): 1) Stock burn dressings and silver sulfadiazine cream, 2) Ensure 24/7 orthopedic surgeon availability, 3) Pre-position ambulances at major gathering areas, 4) Brief ER staff on festival-specific injuries, 5) Coordinate with police for accident hotspots. Peak surge: Festival day evening (6pm-2am).",
+    "metadata": {
+      "category": "emergency_protocols",
+      "department": "trauma",
+      "tags": ["festival", "trauma", "burns", "accidents"]
+    }
+  },
+  {
+    "id": "icu_capacity_management",
+    "content": "ICU Capacity Management Guidelines: Standard ICU has 40 beds. During crisis, can expand to 55 beds by: 1) Converting 10 step-down beds to ICU-level care, 2) Adding 5 beds in post-operative recovery area. Staffing requirement: 1 critical care nurse per 2 ICU patients, 1 intensivist per 10 patients. Equipment needs: ventilators, monitors, syringe pumps. When ICU occupancy >90%, initiate transfer protocol to partner hospitals. Average ICU stay: respiratory cases 5-7 days, cardiac cases 3-5 days, trauma cases 7-10 days.",
+    "metadata": {
+      "category": "critical_care",
+      "department": "ICU",
+      "tags": ["ICU", "capacity", "ventilators", "critical_care"]
+    }
+  },
+  {
+    "id": "telemedicine_surge_support",
+    "content": "Telemedicine for Surge Mitigation: During surge events, telemedicine can reduce ER visits by 30-40% by triaging non-emergency cases. Implementation: 1) Activate telemedicine platform with 5 doctors on rotation, 2) Promote hotline number via SMS to registered patients, 3) Handle consultations for: medication refills, minor ailments, follow-up appointments, mental health support. Cannot handle: chest pain, severe breathlessness, trauma, altered consciousness. Average consultation time: 10-15 minutes. Cost savings: ₹2,000 per avoided ER visit.",
+    "metadata": {
+      "category": "technology",
+      "department": "telemedicine",
+      "tags": ["telemedicine", "surge", "triage", "cost_savings"]
+    }
+  },
+  {
+    "id": "cost_analysis_surge_response",
+    "content": "Financial Impact of Surge Response: Proactive surge management (24-48 hours advance) costs ₹45,000 but saves ₹2,00,000+ through: 1) Avoiding overtime (₹15,000 saved), 2) Preventing patient diversion (₹50,000 revenue retained), 3) Reducing readmissions (₹30,000 saved), 4) Optimizing resource utilization (₹25,000 saved). Reactive management costs: Emergency procurement ₹80,000 (rush charges), Overtime staffing ₹60,000, Lost revenue ₹50,000 (turned away patients), Staff burnout ₹35,000 (replacement costs). ROI of predictive AI system: 4.4x.",
+    "metadata": {
+      "category": "finance",
+      "department": "administration",
+      "tags": ["cost", "ROI", "savings", "budget"]
+    }
+  },
+  {
+    "id": "ambulance_coordination",
+    "content": "Ambulance Fleet Management During Surge: Standard fleet: 8 ambulances (5 BLS, 3 ALS). During surge, coordinate with: 1) Municipal ambulance service (108) for backup, 2) Private ambulance providers (2-hour response), 3) Non-emergency transport services for stable transfers. Ambulance positioning: Deploy 2 near ER entrance, 1 at helipad, rest on patrol routes. Average turnaround time: 45 minutes (pickup to hospital return). GPS tracking enables dynamic reallocation. Cost: ₹3,000 per emergency trip, ₹1,500 per non-emergency transfer.",
+    "metadata": {
+      "category": "logistics",
+      "department": "emergency_services",
+      "tags": ["ambulance", "transport", "emergency", "logistics"]
+    }
+  },
+  {
+    "id": "medication_stockpiling",
+    "content": "Essential Medication Inventory for Surge Events: Maintain surge buffer stock of: 1) Respiratory: Salbutamol inhalers (200), Budesonide (100), Prednisolone (500 tablets), 2) Cardiac: Aspirin (1000), Atorvastatin (500), Nitroglycerin (200), 3) Infectious: Azithromycin (500), Ciprofloxacin (400), Paracetamol (2000), 4) Emergency: Adrenaline (100 vials), Atropine (50), Naloxone (30). Reorder at 40% stock level. Expiry monitoring: Monthly audit. Storage: Temperature-controlled pharmacy with backup power.",
+    "metadata": {
+      "category": "pharmacy",
+      "department": "supply_chain",
+      "tags": ["medication", "inventory", "pharmacy", "drugs"]
+    }
+  },
+  {
+    "id": "mental_health_surge_support",
+    "content": "Mental Health Support During Crisis Events: Prolonged surge events cause anxiety and panic in patients and staff. Deploy: 1) Psychiatrist on-call for patient consultations, 2) Psychologist for staff debriefing sessions (daily during surge), 3) Crisis helpline with trained counselors, 4) Relaxation area for staff with 15-minute breaks. Common issues: acute stress, panic attacks, health anxiety, caregiver burden. Intervention techniques: grounding exercises, breathing techniques, supportive counseling. Escalation criteria: suicidal ideation, severe panic, psychosis.",
+    "metadata": {
+      "category": "mental_health",
+      "department": "psychiatry",
+      "tags": ["mental_health", "stress", "counseling", "support"]
+    }
+  },
+  {
+    "id": "infection_control_surge",
+    "content": "Infection Control During High Patient Volume: Surge conditions increase infection risk. Enhanced protocols: 1) Mandatory hand hygiene after every patient contact (alcohol-based sanitizer stations every 10 feet), 2) PPE usage: N95 masks for respiratory cases, gloves and gowns for all patients, 3) Daily disinfection of high-touch surfaces (door handles, bedrails, monitors), 4) Isolate infectious cases in negative pressure rooms, 5) Screen all admitted patients for contagious diseases. Monitor hospital-acquired infection rate: Should stay <2% despite surge.",
+    "metadata": {
+      "category": "infection_control",
+      "department": "quality_safety",
+      "tags": ["infection", "PPE", "hygiene", "safety"]
+    }
+  },
+  {
+    "id": "data_driven_predictions",
+    "content": "Using Data for Surge Prediction: AI-based prediction uses: 1) Historical admission data (last 3 years), 2) Weather forecasts (temperature, humidity), 3) AQI predictions (SAFAR India data), 4) Event calendars (festivals, sports events, holidays), 5) Social media sentiment (Twitter health complaints). Accuracy: 85% for 24-hour predictions, 75% for 48-hour predictions. False positive rate: 15%. Use predictions to trigger: staff scheduling, inventory orders, patient advisories. Update predictions every 6 hours. Confidence threshold for action: >70%.",
+    "metadata": {
+      "category": "analytics",
+      "department": "IT",
+      "tags": ["AI", "prediction", "data", "forecasting"]
+    }
+  }
+]
