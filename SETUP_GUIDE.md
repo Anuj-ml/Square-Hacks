@@ -135,7 +135,7 @@ VITE_API_URL=http://localhost:8000
 VITE_WS_URL=ws://localhost:8000/ws
 
 # Gemini API Key
-GEMINI_API_KEY=AIzaSyAWPOmNrxeSxFQhqqNENZQFKT1ix5MUDrk
+GEMINI_API_KEY='<GOOGLE_API_KEY>'
 ```
 
 #### Run Frontend

@@ -27,8 +27,8 @@ pip install -r requirements.txt
 2. Set environment variables (store credentials securely). For local testing you can set them in the shell:
 
 ```powershell
-$env:DATABASE_URL = 'postgresql://postgres:Anuj%402028@localhost:5432/arogya_swarm'
-$env:VERTEX_API_KEY = 'AIzaSyCuB3IMpCRLWioBF5l1ee6R6gpfiIPCS8w'
+$env:DATABASE_URL = 'postgresql://postgres:password@localhost:5432/arogya_swarm'
+$env:VERTEX_API_KEY = '<YOUR_VERTEX_API_KEY>'
 # You must provide your Vertex project id too
 $env:VERTEX_PROJECT_ID = '<YOUR_VERTEX_PROJECT_ID>'
 ```
