@@ -454,33 +454,6 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     }
   }, [activeScenario]);
 
-  // --- Request User's Live Location ---
-  useEffect(() => {
-    if (activeScenario === 'Normal' && 'geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lon: position.coords.longitude
-          });
-          setLocationPermission('granted');
-          console.log('📍 Location granted:', position.coords.latitude, position.coords.longitude);
-        },
-        (error) => {
-          console.warn('Location permission denied or error:', error.message);
-          setLocationPermission('denied');
-          // Fall back to Mumbai coordinates
-          setUserLocation(null);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 300000 // Cache for 5 minutes
-        }
-      );
-    }
-  }, [activeScenario]);
-
   // --- Fetch real-time AQI using live location ---
   useEffect(() => {
     const loadAQI = async () => {
