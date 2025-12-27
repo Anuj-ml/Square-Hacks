@@ -1,12 +1,13 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
+import os
 
 class Settings(BaseSettings):
     """Application settings from environment variables"""
     
-    # Database
-    DATABASE_URL: str = "postgresql://postgres:password@localhost:5432/arogya_swarm"
-    REDIS_URL: str = "redis://localhost:6379/0"
+    # Database - Railway automatically provides these
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/arogya_swarm")
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     
     # LLM
     GOOGLE_API_KEY: str
@@ -42,9 +43,10 @@ class Settings(BaseSettings):
     ENABLE_RAG_CHATBOT: bool = True
     
     # App Settings
-    FRONTEND_URL: str = "http://localhost:5173"
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
     LOG_LEVEL: str = "INFO"
     DEBUG: bool = False
+    PORT: int = int(os.getenv("PORT", "8000"))  # Railway provides PORT variable
     
     # Translation API (Phase 1)
     TRANSLATION_API_PROVIDER: str = "mymemory"

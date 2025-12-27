@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
 import asyncio
+import os
 from typing import List
 from datetime import datetime
 
@@ -72,10 +73,15 @@ app = FastAPI(
 # Setup error handlers
 setup_error_handlers(app)
 
-# CORS middleware
+# CORS middleware - Allow multiple origins for production
+allowed_origins = [settings.FRONTEND_URL]
+# Add Railway preview URLs if in production
+if "railway.app" in settings.FRONTEND_URL or os.getenv("RAILWAY_ENVIRONMENT"):
+    allowed_origins.append("*")  # Allow all origins for Railway deployments
+    
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -89,7 +89,7 @@ During festivals like Diwali, pollution spikes to 400+ AQI, causing **50% surge 
 └─────────────────────────────────────┘
 ```
 
-**Live Dashboard:** https://arogya-swarm.vercel.app
+**🚀 Live Demo:** https://arogyaswarm.vercel.app/
 
 ---
 
@@ -335,7 +335,7 @@ npm run dev
 9️⃣ Hear voice narration explain cost savings (₹45K/month)
 ```
 
-**Live Demo:** https://arogya-swarm.vercel.app (Coming Soon)
+**🚀 Live Demo:** https://arogyaswarm.vercel.app/
 
 ---
 
@@ -652,7 +652,7 @@ Square-Hacks/
 
 - **Developer:** Anuj Jha
 - **GitHub Repo:** https://github.com/Anuj-ml/Square-Hacks
-- **Live Demo:** Coming Soon (Vercel deployment in progress)
+- **Live Demo:** https://arogyaswarm.vercel.app/
 - **Email:** anujjha1004@gmail.com
 - **LinkedIn:** [Connect with Anuj](https://linkedin.com/in/anuj-jha)
 
