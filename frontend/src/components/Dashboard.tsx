@@ -457,18 +457,11 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   // --- Fetch real-time AQI using live location ---
   useEffect(() => {
     const loadAQI = async () => {
-      if (activeScenario === 'Normal') {
+      if (activeScenario === 'Normal' && userLocation) {
         try {
-          let data;
-          if (userLocation) {
-            // Use user's live location
-            console.log('🌍 Fetching AQI for live location:', userLocation);
-            data = await fetchCurrentAQI(userLocation.lat, userLocation.lon);
-          } else {
-            // Fallback to Mumbai
-            console.log('📍 Fetching AQI for Mumbai (fallback)');
-            data = await fetchCurrentAQI(undefined, undefined, 'Mumbai');
-          }
+          // Use user's live location only
+          console.log('🌍 Fetching AQI for live location:', userLocation);
+          const data = await fetchCurrentAQI(userLocation.lat, userLocation.lon);
           setRealtimeAQI(data.aqi);
           console.log('✅ AQI fetched:', data.aqi, 'from', data.city || 'Current Location');
         } catch (err) {
