@@ -8,6 +8,8 @@ from datetime import datetime
 
 from core.config import settings
 from core.database import engine, get_db, Base
+from core.error_handlers import setup_error_handlers
+from core.logging_config import setup_logging
 from api.routes import router
 from api.websocket import ConnectionManager
 from agents import ArogyaSwarmGraph
@@ -24,6 +26,9 @@ agent_task = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
+    # Startup: Setup logging
+    setup_logging(settings.LOG_LEVEL)
+    
     # Startup: Create database tables
     try:
         Base.metadata.create_all(bind=engine)
@@ -63,6 +68,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Setup error handlers
+setup_error_handlers(app)
 
 # CORS middleware
 app.add_middleware(

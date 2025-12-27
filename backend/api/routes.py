@@ -328,41 +328,36 @@ async def test_agent_reasoning():
     }
 
 @router.get("/environment/aqi")
-async def get_current_aqi():
-    """Get real-time AQI from OpenWeatherMap API"""
+async def get_current_aqi(lat: Optional[float] = None, lon: Optional[float] = None, city: str = "Mumbai"):
+    """
+    Get real-time AQI from Google Maps Air Quality API.
+    
+    Uses adapter layer to maintain frontend contract compatibility.
+    No frontend changes required.
+    
+    Args:
+        lat: Optional latitude for live location
+        lon: Optional longitude for live location
+        city: City name (default: Mumbai) - used if lat/lon not provided
+    
+    Returns:
+        OpenWeather-compatible response format with Google data
+    """
     from services.aqi_service import AQIService
     from core.config import settings
     
-    aqi_service = AQIService(settings.OPENWEATHERMAP_API_KEY)
-    aqi = await aqi_service.get_current_aqi("Mumbai")
+    aqi_service = AQIService(settings.AIR_QUALITY_API_KEY)
     
-    # Determine quality level
-    if aqi <= 50:
-        quality = "Good"
-        color = "green"
-    elif aqi <= 100:
-        quality = "Moderate"
-        color = "yellow"
-    elif aqi <= 150:
-        quality = "Unhealthy for Sensitive Groups"
-        color = "orange"
-    elif aqi <= 200:
-        quality = "Unhealthy"
-        color = "red"
-    elif aqi <= 300:
-        quality = "Very Unhealthy"
-        color = "purple"
+    # Service returns full adapter response
+    result = await aqi_service.get_current_aqi(city=city, lat=lat, lon=lon)
+    
+    # Add city context if using coordinates
+    if lat and lon:
+        result["city"] = "Current Location"
     else:
-        quality = "Hazardous"
-        color = "maroon"
+        result["city"] = city
     
-    return {
-        "aqi": aqi,
-        "quality": quality,
-        "color": color,
-        "city": "Mumbai",
-        "timestamp": datetime.now().isoformat()
-    }
+    return result
 
 # ============================================
 # RAG CHATBOT ENDPOINTS
@@ -433,3 +428,172 @@ async def get_rag_status():
             "database_connected": False,
             "error": str(e)
         }
+
+# ==================== PHASE 1: DYNAMIC MULTILINGUAL SUPPORT ====================
+from services.translation_service import TranslationService
+import logging
+
+logger = logging.getLogger(__name__)
+
+@router.post("/translate")
+async def translate_text(
+    text: str,
+    target_lang: str,
+    source_lang: str = 'auto',
+    db: Session = Depends(get_db)
+):
+    """
+    Dynamic translation using FREE MyMemory API
+    Supports: English, Hindi, Marathi, Tamil, Telugu, Bengali
+    Uses multi-layer caching for performance
+    """
+    try:
+        translated = TranslationService.translate(
+            text=text,
+            target_lang=target_lang,
+            source_lang=source_lang,
+            db=db
+        )
+        
+        detected_lang = TranslationService.detect_language(text) if source_lang == 'auto' else source_lang
+        
+        return {
+            "success": True,
+            "original": text,
+            "translated": translated,
+            "source_lang": detected_lang,
+            "target_lang": target_lang,
+            "cached": translated != text
+        }
+    except Exception as e:
+        logger.error(f"Translation endpoint error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/translate/bulk")
+async def translate_bulk_text(
+    texts: List[str],
+    target_lang: str,
+    source_lang: str = 'auto',
+    db: Session = Depends(get_db)
+):
+    """Translate multiple texts at once"""
+    try:
+        translated = TranslationService.translate_bulk(
+            texts=texts,
+            target_lang=target_lang,
+            source_lang=source_lang,
+            db=db
+        )
+        
+        return {
+            "success": True,
+            "count": len(texts),
+            "translations": [
+                {"original": orig, "translated": trans}
+                for orig, trans in zip(texts, translated)
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/languages")
+async def get_supported_languages():
+    """Get list of supported languages"""
+    return {
+        "success": True,
+        "languages": TranslationService.SUPPORTED_LANGUAGES,
+        "providers": ["mymemory"],
+        "free_tier_limits": {
+            "mymemory": "5000 requests/day (10000 with email)"
+        }
+    }
+
+@router.get("/translation/stats")
+async def get_translation_stats(db: Session = Depends(get_db)):
+    """Get translation cache statistics"""
+    stats = TranslationService.get_cache_stats(db)
+    return {
+        "success": True,
+        "stats": stats
+    }
+
+@router.post("/translation/detect")
+async def detect_text_language(text: str):
+    """Detect language of given text"""
+    try:
+        detected = TranslationService.detect_language(text)
+        return {
+            "success": True,
+            "text": text,
+            "detected_language": detected,
+            "language_name": TranslationService.SUPPORTED_LANGUAGES.get(detected, "unknown")
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== PHASE 1: MESSAGING SERVICE ====================
+from services.messaging_service import MessagingService
+
+@router.post("/messaging/sms")
+async def send_sms_message(
+    phone: str,
+    message: str,
+    recipient_name: Optional[str] = None,
+    language: str = 'en',
+    db: Session = Depends(get_db)
+):
+    """Send SMS message (mock for demo)"""
+    messaging = MessagingService(db)
+    result = await messaging.send_sms(
+        phone=phone,
+        message=message,
+        recipient_name=recipient_name,
+        language=language
+    )
+    return result
+
+@router.post("/messaging/whatsapp")
+async def send_whatsapp_message(
+    phone: str,
+    message: str,
+    recipient_name: Optional[str] = None,
+    media_url: Optional[str] = None,
+    language: str = 'en',
+    db: Session = Depends(get_db)
+):
+    """Send WhatsApp message (mock for demo)"""
+    messaging = MessagingService(db)
+    result = await messaging.send_whatsapp(
+        phone=phone,
+        message=message,
+        recipient_name=recipient_name,
+        media_url=media_url,
+        language=language
+    )
+    return result
+
+@router.post("/messaging/bulk-alert")
+async def send_bulk_alert(
+    recipients: List[dict],
+    message: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Send bulk alerts to multiple recipients
+    recipients: [{"phone": "+919876543210", "name": "Name", "language": "hi"}]
+    """
+    messaging = MessagingService(db)
+    result = await messaging.send_bulk_alerts(recipients, message)
+    return result
+
+@router.get("/messaging/logs")
+async def get_message_logs(
+    limit: int = 50,
+    phone: Optional[str] = None,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Get message logs"""
+    messaging = MessagingService(db)
+    logs = messaging.get_message_logs(limit, phone, status)
+    return {"success": True, "logs": logs, "count": len(logs)}

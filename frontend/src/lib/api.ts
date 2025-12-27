@@ -65,8 +65,22 @@ export async function triggerCrisisSimulation(crisisType: string) {
   return response.json();
 }
 
-export async function fetchCurrentAQI() {
-  const response = await fetch(`${API_BASE_URL}/api/v1/environment/aqi`);
+export async function fetchCurrentAQI(lat?: number, lon?: number, city?: string) {
+  let url = `${API_BASE_URL}/api/v1/environment/aqi`;
+  const params = new URLSearchParams();
+  
+  if (lat !== undefined && lon !== undefined) {
+    params.append('lat', lat.toString());
+    params.append('lon', lon.toString());
+  } else if (city) {
+    params.append('city', city);
+  }
+  
+  if (params.toString()) {
+    url += `?${params.toString()}`;
+  }
+  
+  const response = await fetch(url);
   return response.json();
 }
 
@@ -135,4 +149,35 @@ export async function ingestRagDocuments(documents: Array<Record<string, any>>) 
   }
   
   return response.json();
+}
+
+export async function translateText(text: string, targetLang: string): Promise<string> {
+  try {
+    if (!text || targetLang === 'en') return text;
+    
+    console.log('🌐 Translating:', text.substring(0, 50) + '...', 'to', targetLang);
+    
+    const params = new URLSearchParams({
+      text: text,
+      target_lang: targetLang
+    });
+    
+    const response = await fetch(`${API_BASE_URL}/api/v1/translate?${params.toString()}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Translation failed: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log('✅ Translated:', data.translated?.substring(0, 50) + '...');
+    return data.translated || text;
+  } catch (error) {
+    console.error('❌ Translation error:', error);
+    return text;
+  }
 }

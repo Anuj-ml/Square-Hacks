@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line } from 'recharts';
+import { useTranslation } from 'react-i18next';
 import { Icons } from './ui/Icons';
 import { useRealtimeUpdates } from '../hooks/useRealtimeUpdates';
 import { useAgentState } from '../hooks/useAgentState';
-import { fetchLatestPrediction, triggerCrisisSimulation, fetchCurrentAQI, fetchBeds, fetchStaff, fetchInventory } from '../lib/api';
+import { fetchLatestPrediction, triggerCrisisSimulation, fetchCurrentAQI, fetchBeds, fetchStaff, fetchInventory, translateText } from '../lib/api';
 import ChatbotOverlay from './ChatbotOverlay';
+import { LanguageSelector } from './LanguageSelector';
+import { formatNumber, formatPercent, formatDecimal } from '../lib/numberFormatter';
+import { VoiceControl } from './VoiceControl';
 
 // --- Types ---
 type Scenario = 'Normal' | 'Pollution' | 'Festival' | 'Outbreak';
@@ -37,33 +41,92 @@ interface Recommendation {
 
 // --- Mock Data Generators ---
 const generateChartData = (scenario: Scenario, predictionData?: any, resources?: any) => {
+  const capacity = resources?.beds?.total || 200;
+  const maxCapacity = Math.floor(capacity * 0.8);
+  
   // Use real prediction data if available
   if (predictionData && predictionData.predicted_surge) {
     const surgeValue = predictionData.predicted_surge;
-    const capacity = resources?.beds?.total || 200;
+    const peakHour = 14; // Peak at 2 PM (14:00)
     
-    // Generate 48-hour forecast based on prediction
+    // Generate smooth 48-hour forecast based on prediction
     return Array.from({ length: 48 }, (_, i) => {
       const time = `${i % 24}:00`;
-      const hourOffset = (i - 24) / 24; // -1 to +1 range
-      const surgeTrend = surgeValue * (1 + Math.sin(hourOffset * Math.PI) * 0.3);
+      const hourOfDay = i % 24;
+      
+      // Create realistic daily pattern with smooth transitions
+      // Morning ramp-up (6am-2pm), afternoon peak (2pm-8pm), evening decline (8pm-6am)
+      let dailyPattern = 0;
+      if (hourOfDay >= 6 && hourOfDay < 14) {
+        // Morning ramp-up: gradual increase
+        dailyPattern = 0.6 + (hourOfDay - 6) * 0.05;
+      } else if (hourOfDay >= 14 && hourOfDay < 20) {
+        // Afternoon peak: maintain high level
+        dailyPattern = 1.0 - (hourOfDay - 14) * 0.03;
+      } else if (hourOfDay >= 20 || hourOfDay < 6) {
+        // Night: low activity
+        const nightHour = hourOfDay >= 20 ? hourOfDay - 20 : hourOfDay + 4;
+        dailyPattern = 0.4 - nightHour * 0.02;
+      }
+      
+      // Apply scenario multiplier
+      const baseValue = surgeValue * dailyPattern;
+      const surge = Math.max(10, Math.min(maxCapacity - 10, baseValue));
+      
       return { 
         time, 
-        surge: Math.floor(Math.max(10, Math.min(100, surgeTrend))), 
-        capacity: Math.floor(capacity * 0.8)
+        surge: Math.floor(surge), 
+        capacity: maxCapacity
       };
     });
   }
   
-  // Fallback to synthetic data
-  const base = scenario === 'Normal' ? 40 : scenario === 'Pollution' ? 65 : scenario === 'Festival' ? 85 : 95;
-  const volatility = scenario === 'Normal' ? 10 : 25;
-  const capacity = resources?.beds?.total || 200;
+  // Fallback to synthetic data with realistic patterns
+  const scenarioConfig = {
+    Normal: { base: 45, morning: 50, peak: 60, evening: 48, night: 35 },
+    Pollution: { base: 70, morning: 80, peak: 95, evening: 85, night: 65 },
+    Festival: { base: 80, morning: 90, peak: 110, evening: 100, night: 75 },
+    Outbreak: { base: 95, morning: 110, peak: 130, evening: 120, night: 90 }
+  };
+  
+  const config = scenarioConfig[scenario];
   
   return Array.from({ length: 48 }, (_, i) => {
     const time = `${i % 24}:00`;
-    const surge = Math.min(100, Math.max(10, base + Math.sin(i / 8) * volatility + (Math.random() * 10 - 5)));
-    return { time, surge: Math.floor(surge), capacity: Math.floor(capacity * 0.8) };
+    const hourOfDay = i % 24;
+    
+    // Smooth interpolation between time periods
+    let surge = config.base;
+    if (hourOfDay >= 6 && hourOfDay < 10) {
+      // Morning (6am-10am): interpolate between night and morning
+      const t = (hourOfDay - 6) / 4;
+      surge = config.night + (config.morning - config.night) * t;
+    } else if (hourOfDay >= 10 && hourOfDay < 14) {
+      // Late morning (10am-2pm): interpolate to peak
+      const t = (hourOfDay - 10) / 4;
+      surge = config.morning + (config.peak - config.morning) * t;
+    } else if (hourOfDay >= 14 && hourOfDay < 18) {
+      // Afternoon (2pm-6pm): at peak, slight decline
+      const t = (hourOfDay - 14) / 4;
+      surge = config.peak - (config.peak - config.evening) * t;
+    } else if (hourOfDay >= 18 && hourOfDay < 22) {
+      // Evening (6pm-10pm): decline
+      const t = (hourOfDay - 18) / 4;
+      surge = config.evening - (config.evening - config.night) * t;
+    } else {
+      // Night (10pm-6am): low activity
+      surge = config.night;
+    }
+    
+    // Add slight variation but keep it smooth (±2%)
+    const variation = Math.sin(i * 0.5) * (surge * 0.02);
+    const finalSurge = Math.max(10, Math.min(maxCapacity - 10, surge + variation));
+    
+    return { 
+      time, 
+      surge: Math.floor(finalSurge), 
+      capacity: maxCapacity 
+    };
   });
 };
 
@@ -75,6 +138,38 @@ const SCENARIO_CONFIG: Record<Scenario, { aqi: number; risk: RiskLevel; weather:
 };
 
 const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const { t, i18n } = useTranslation();
+  
+  // Translation cache to avoid re-translating same text
+  const translationCache = useRef<Map<string, string>>(new Map());
+  
+  // Translate dynamic text based on current language
+  const translateDynamic = async (text: string): Promise<string> => {
+    if (!text || i18n.language === 'en') return text;
+    
+    const cacheKey = `${i18n.language}:${text}`;
+    if (translationCache.current.has(cacheKey)) {
+      return translationCache.current.get(cacheKey)!;
+    }
+    
+    try {
+      const translated = await translateText(text, i18n.language);
+      translationCache.current.set(cacheKey, translated);
+      return translated;
+    } catch (error) {
+      console.error('Translation failed for:', text, error);
+      return text;
+    }
+  };
+  
+  // Weather translation helper
+  const translateWeather = (weather: string) => {
+    if (weather === 'Clear Sky') return t('clearSky');
+    if (weather === 'Haze / Smog') return t('hazSmog');
+    if (weather === 'Rainy') return t('rainy');
+    return weather;
+  };
+  
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [activeScenario, setActiveScenario] = useState<Scenario>('Normal');
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -82,7 +177,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     {
       id: 1,
       agent: 'Orchestrator',
-      message: 'System initialized. Monitoring all departments.',
+      message: '', // Will be set in useEffect
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       isImportant: false
     }
@@ -91,12 +186,127 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [isFeedPaused, setIsFeedPaused] = useState(false);
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>('light');
   const [realtimeAQI, setRealtimeAQI] = useState<number | null>(null);
+  const [userLocation, setUserLocation] = useState<{lat: number, lon: number} | null>(null);
+  const [locationPermission, setLocationPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
   const [realtimeResources, setRealtimeResources] = useState<any>(null);
   const [ambulanceData, setAmbulanceData] = useState<any>(null);
   const [latestPrediction, setLatestPrediction] = useState<any>(null);
+  const [translatedLogs, setTranslatedLogs] = useState<Log[]>([]);
+  const [translatedAlerts, setTranslatedAlerts] = useState<Alert[]>([]);
+  const [translatedRecommendations, setTranslatedRecommendations] = useState<Recommendation[]>([]);
   const logsContainerRef = useRef<HTMLDivElement>(null);
+
+  // Set initial translated message
+  useEffect(() => {
+    setLogs([{
+      id: 1,
+      agent: 'Orchestrator',
+      message: t('systemInitialized'),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      isImportant: false
+    }]);
+  }, [t]);
+
+  // Translate logs when language changes
+  useEffect(() => {
+    const translateLogs = async () => {
+      console.log('Translating logs, language:', i18n.language, 'logs count:', logs.length);
+      if (i18n.language === 'en' || logs.length === 0) {
+        setTranslatedLogs(logs);
+        return;
+      }
+      
+      const translated = await Promise.all(
+        logs.map(async (log) => ({
+          ...log,
+          message: await translateDynamic(log.message)
+        }))
+      );
+      console.log('Translated logs:', translated);
+      setTranslatedLogs(translated);
+    };
+    translateLogs();
+  }, [logs, i18n.language]);
+
+  // Translate alerts when language changes
+  useEffect(() => {
+    const translateAlerts = async () => {
+      console.log('🔄 Translating alerts, language:', i18n.language, 'alerts count:', alerts.length);
+      
+      if (alerts.length === 0) {
+        setTranslatedAlerts([]);
+        return;
+      }
+      
+      if (i18n.language === 'en') {
+        setTranslatedAlerts(alerts);
+        return;
+      }
+      
+      try {
+        const translated = await Promise.all(
+          alerts.map(async (alert) => {
+            const translatedTitle = await translateDynamic(alert.title);
+            const translatedDesc = await translateDynamic(alert.desc);
+            console.log('✅ Alert translated:', alert.title, '→', translatedTitle);
+            return {
+              ...alert,
+              title: translatedTitle,
+              desc: translatedDesc
+            };
+          })
+        );
+        console.log('✅ All alerts translated:', translated.length);
+        setTranslatedAlerts(translated);
+      } catch (error) {
+        console.error('❌ Alert translation failed:', error);
+        setTranslatedAlerts(alerts);
+      }
+    };
+    translateAlerts();
+  }, [alerts, i18n.language]);
+
+  // Translate recommendations when language changes
+  useEffect(() => {
+    const translateRecs = async () => {
+      console.log('🔄 Translating recommendations, language:', i18n.language, 'recs count:', recommendations.length);
+      
+      if (recommendations.length === 0) {
+        setTranslatedRecommendations([]);
+        return;
+      }
+      
+      if (i18n.language === 'en') {
+        setTranslatedRecommendations(recommendations);
+        return;
+      }
+      
+      try {
+        const translated = await Promise.all(
+          recommendations.map(async (rec) => {
+            const translatedAction = await translateDynamic(rec.action);
+            const translatedReason = await translateDynamic(rec.reason);
+            const translatedImpact = await translateDynamic(rec.impact);
+            console.log('✅ Rec translated:', rec.action, '→', translatedAction);
+            return {
+              ...rec,
+              action: translatedAction,
+              reason: translatedReason,
+              impact: translatedImpact
+            };
+          })
+        );
+        console.log('✅ All recommendations translated:', translated.length);
+        setTranslatedRecommendations(translated);
+      } catch (error) {
+        console.error('❌ Recommendation translation failed:', error);
+        setTranslatedRecommendations(recommendations);
+      }
+    };
+    translateRecs();
+  }, [recommendations, i18n.language]);
 
   // Real-time data integration
   const { isConnected, latestUpdate } = useRealtimeUpdates();
@@ -217,13 +427,77 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     return () => clearInterval(timer);
   }, []);
 
-  // --- Fetch real-time AQI from WebSocket and fallback API ---
+  // --- Request User's Live Location ---
+  useEffect(() => {
+    if (activeScenario === 'Normal' && 'geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lon: position.coords.longitude
+          });
+          setLocationPermission('granted');
+          console.log('📍 Location granted:', position.coords.latitude, position.coords.longitude);
+        },
+        (error) => {
+          console.warn('Location permission denied or error:', error.message);
+          setLocationPermission('denied');
+          // Fall back to Mumbai coordinates
+          setUserLocation(null);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 300000 // Cache for 5 minutes
+        }
+      );
+    }
+  }, [activeScenario]);
+
+  // --- Request User's Live Location ---
+  useEffect(() => {
+    if (activeScenario === 'Normal' && 'geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lon: position.coords.longitude
+          });
+          setLocationPermission('granted');
+          console.log('📍 Location granted:', position.coords.latitude, position.coords.longitude);
+        },
+        (error) => {
+          console.warn('Location permission denied or error:', error.message);
+          setLocationPermission('denied');
+          // Fall back to Mumbai coordinates
+          setUserLocation(null);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 300000 // Cache for 5 minutes
+        }
+      );
+    }
+  }, [activeScenario]);
+
+  // --- Fetch real-time AQI using live location ---
   useEffect(() => {
     const loadAQI = async () => {
       if (activeScenario === 'Normal') {
         try {
-          const data = await fetchCurrentAQI();
+          let data;
+          if (userLocation) {
+            // Use user's live location
+            console.log('🌍 Fetching AQI for live location:', userLocation);
+            data = await fetchCurrentAQI(userLocation.lat, userLocation.lon);
+          } else {
+            // Fallback to Mumbai
+            console.log('📍 Fetching AQI for Mumbai (fallback)');
+            data = await fetchCurrentAQI(undefined, undefined, 'Mumbai');
+          }
           setRealtimeAQI(data.aqi);
+          console.log('✅ AQI fetched:', data.aqi, 'from', data.city || 'Current Location');
         } catch (err) {
           console.error('Failed to load real-time AQI:', err);
         }
@@ -234,7 +508,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     // Fallback polling every 5 minutes (WebSocket provides updates every 30 seconds)
     const interval = setInterval(loadAQI, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [activeScenario]);
+  }, [activeScenario, userLocation]);
 
   // --- Real-time AQI updates from WebSocket ---
   useEffect(() => {
@@ -524,7 +798,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-2xl p-6 shadow-lg transition-colors">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
              <div className="flex flex-col">
-                <span className="text-xs uppercase text-gray-500 font-bold tracking-wider mb-1">Surge Risk</span>
+                <span className="text-xs uppercase text-gray-500 font-bold tracking-wider mb-1">{t('surgeRisk')}</span>
                 <span className={`font-display font-bold text-2xl ${
                     stats.risk === 'Critical' ? 'text-red-500 animate-pulse' : 
                     stats.risk === 'High' ? 'text-orange-500' : 
@@ -535,25 +809,25 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 </span>
              </div>
              <div className="flex flex-col">
-                <span className="text-xs uppercase text-gray-500 font-bold tracking-wider mb-1">Live AQI</span>
+                <span className="text-xs uppercase text-gray-500 font-bold tracking-wider mb-1">{t('liveAQI')}</span>
                 <span className={`font-display font-bold text-2xl ${
                     stats.aqi >= 300 ? 'text-red-500 animate-pulse' : 
                     stats.aqi >= 200 ? 'text-orange-500' : 
                     stats.aqi >= 100 ? 'text-yellow-500' : 
                     'text-green-500'
                 }`}>
-                    {stats.aqi}
+                    {formatNumber(stats.aqi, i18n.language)}
                 </span>
              </div>
              <div className="flex flex-col">
-                <span className="text-xs uppercase text-gray-500 font-bold tracking-wider mb-1">Weather</span>
-                <span className="font-display font-bold text-2xl text-[var(--text-primary)]">{stats.weather}</span>
+                <span className="text-xs uppercase text-gray-500 font-bold tracking-wider mb-1">{t('weather')}</span>
+                <span className="font-display font-bold text-2xl text-[var(--text-primary)]">{translateWeather(stats.weather)}</span>
              </div>
              <div className="flex flex-col">
-                <span className="text-xs uppercase text-gray-500 font-bold tracking-wider mb-1">Sync Status</span>
+                <span className="text-xs uppercase text-gray-500 font-bold tracking-wider mb-1">{t('syncStatus')}</span>
                 <div className="flex items-center gap-2">
                    <div className="w-2 h-2 rounded-full bg-green-500 animate-ping"></div>
-                   <span className="font-display font-bold text-xl text-[var(--text-primary)]">Active</span>
+                   <span className="font-display font-bold text-xl text-[var(--text-primary)]">{t('active')}</span>
                 </div>
              </div>
           </div>
@@ -563,7 +837,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <div className="animate-slideIn">
         <h3 className="text-lg font-display font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
             <Icons.ShieldCheck className="w-5 h-5 text-[#00C2FF]" />
-            Simulation & Crisis Mode
+            {t('simulationCrisis')}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {(['Normal', 'Pollution', 'Festival', 'Outbreak'] as Scenario[]).map((s) => (
@@ -580,13 +854,13 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${activeScenario === s ? 'bg-[#00C2FF] text-black' : 'bg-[var(--element-bg)] text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'}`}>
                             <ScenarioIcon type={s} className="w-4 h-4" />
                         </div>
-                        <span className={`font-bold text-sm ${activeScenario === s ? 'text-[#00C2FF]' : 'text-[var(--text-primary)]'}`}>{s}</span>
+                        <span className={`font-bold text-sm ${activeScenario === s ? 'text-[#00C2FF]' : 'text-[var(--text-primary)]'}`}>{t(s.toLowerCase() as any)}</span>
                     </div>
                     <p className="text-[10px] text-gray-500 leading-relaxed">
-                        {s === 'Normal' && "Baseline operations."}
-                        {s === 'Pollution' && "AQI > 400. High respiratory load."}
-                        {s === 'Festival' && "Crowd surge. High trauma risk."}
-                        {s === 'Outbreak' && "Viral vector. Bio-threat high."}
+                        {s === 'Normal' && t('normalDesc')}
+                        {s === 'Pollution' && t('pollutionDesc')}
+                        {s === 'Festival' && t('festivalDesc')}
+                        {s === 'Outbreak' && t('outbreakDesc')}
                     </p>
                     {activeScenario === s && (
                         <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#00C2FF] animate-pulse"></div>
@@ -602,13 +876,13 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               <div className="p-4 border-b border-[var(--border-subtle)] bg-[var(--element-bg)] flex items-center justify-between shrink-0">
                   <h3 className="font-display font-bold text-[var(--text-primary)] flex items-center gap-2 text-sm uppercase tracking-wider">
                       <Icons.Radio className="w-4 h-4 text-[#00C2FF] animate-pulse" />
-                      Agent Neural Feed
+                      {t('agentNeuralFeed')}
                   </h3>
                   <button 
                     onClick={() => setIsFeedPaused(!isFeedPaused)} 
                     className="text-[10px] font-bold uppercase tracking-wider text-gray-500 hover:text-[var(--text-primary)] transition-colors"
                   >
-                    {isFeedPaused ? 'Resume' : 'Pause'}
+                    {isFeedPaused ? t('resume') : t('pause')}
                   </button>
               </div>
               <div 
@@ -616,7 +890,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 ref={logsContainerRef}
               >
                   <div className="absolute left-[19px] top-0 bottom-0 w-px bg-[var(--border-subtle)] h-full"></div>
-                  {logs.map((log) => (
+                  {translatedLogs.map((log) => (
                       <div key={log.id} className={`flex gap-3 relative z-10 ${log.isImportant ? 'bg-red-500/5 -mx-2 px-2 py-2 rounded border-l-2 border-red-500' : ''}`}>
                           <div className="flex flex-col items-center shrink-0 w-4">
                               <div className={`w-2 h-2 rounded-full mt-1.5 shadow-[0_0_8px_currentColor] ${
@@ -647,18 +921,18 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <div className="lg:col-span-8 bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-2xl p-6 relative overflow-hidden group flex flex-col h-[400px] lg:h-full transition-colors">
                <div className="flex justify-between items-start mb-2 shrink-0 relative z-10">
                    <div>
-                       <h3 className="text-[var(--text-secondary)] text-xs font-bold uppercase tracking-widest mb-1">Surge Prediction Engine</h3>
+                       <h3 className="text-[var(--text-secondary)] text-xs font-bold uppercase tracking-widest mb-1">{t('surgePredictionEngine')}</h3>
                        <h2 className="text-2xl font-display font-bold text-[var(--text-primary)] flex items-center gap-3">
-                          48-Hour Forecast
+                          {formatNumber(48, i18n.language)}-{t('hourForecast')}
                           <span className="px-2 py-1 rounded text-[10px] font-mono bg-[#00C2FF]/10 text-[#00C2FF] border border-[#00C2FF]/20 flex items-center gap-1">
-                             <Icons.Brain className="w-3 h-3" /> {latestPrediction?.confidence ? `${Math.floor(latestPrediction.confidence)}%` : '94%'} CONFIDENCE
+                             <Icons.Brain className="w-3 h-3" /> {latestPrediction?.confidence ? `${formatNumber(Math.floor(latestPrediction.confidence), i18n.language)}%` : `${formatNumber(94, i18n.language)}%`} {t('confidence')}
                           </span>
                        </h2>
                    </div>
                    <div className="text-right">
-                      <div className="text-xs text-[var(--text-secondary)] mb-1">Projected Peak</div>
+                      <div className="text-xs text-[var(--text-secondary)] mb-1">{t('projectedPeak')}</div>
                       <div className="text-xl font-bold text-[var(--text-primary)]">
-                         {latestPrediction?.peak_time ? new Date(latestPrediction.peak_time).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : (activeScenario === 'Normal' ? '14:00' : '02:00')} <span className="text-sm text-gray-500">{latestPrediction?.peak_time ? '' : 'Tomorrow'}</span>
+                         {latestPrediction?.peak_time ? new Date(latestPrediction.peak_time).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : (activeScenario === 'Normal' ? '14:00' : '02:00')} <span className="text-sm text-gray-500">{latestPrediction?.peak_time ? '' : t('tomorrow')}</span>
                       </div>
                    </div>
                </div>
@@ -673,11 +947,12 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                            </defs>
                            <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
                            <XAxis dataKey="time" stroke="var(--chart-axis)" fontSize={10} tickLine={false} axisLine={false} minTickGap={40} />
-                           <YAxis stroke="var(--chart-axis)" fontSize={10} tickLine={false} axisLine={false} />
+                           <YAxis stroke="var(--chart-axis)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value) => formatNumber(value, i18n.language)} />
                            <Tooltip 
                               contentStyle={{ backgroundColor: 'var(--chart-tooltip)', borderColor: 'var(--border-main)', borderRadius: '8px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)', color: 'var(--text-primary)' }}
                               itemStyle={{ color: 'var(--text-primary)', fontSize: '12px', fontWeight: 'bold' }}
                               labelStyle={{ color: 'var(--text-secondary)', marginBottom: '4px', fontSize: '10px' }}
+                              formatter={(value: any) => formatNumber(Number(value), i18n.language)}
                            />
                            <Area 
                               type="monotone" 
@@ -708,60 +983,64 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const renderResources = () => (
     <div className="animate-slideIn h-full">
-       <h2 className="text-2xl font-display font-bold text-[var(--text-primary)] mb-6">Real-time Resources</h2>
+       <h2 className="text-2xl font-display font-bold text-[var(--text-primary)] mb-6">{t('realtimeResources')}</h2>
        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 h-[calc(100%-60px)]">
             <ResourcePanel 
-               title="Bed Capacity"
+               title={t('bedCapacity')}
                mainValue={stats.beds.free}
                maxValue={stats.beds.total}
-               unit="Free"
-               trend={`${stats.beds.total - stats.beds.free} occupied`}
+               unit={t('free')}
+               trend={`${formatNumber(stats.beds.total - stats.beds.free, i18n.language)} ${t('occupied')}`}
                details={bedDetails}
                status={stats.beds.free < 20 ? 'critical' : stats.beds.free < 50 ? 'warning' : 'safe'}
                icon={Icons.LayoutDashboard}
                cssVariables={cssVariables}
+               language={i18n.language}
             />
             <ResourcePanel 
-               title="Medical Staff"
+               title={t('medicalStaff')}
                mainValue={stats.staff.idle}
                maxValue={stats.staff.total || (stats.staff.doctors + stats.staff.nurses)}
-               unit="Available"
-               trend={`${stats.staff.active} On Duty`}
+               unit={t('available')}
+               trend={`${formatNumber(stats.staff.active, i18n.language)} ${t('onDuty')}`}
                details={[
-                  { label: "Doctors", val: `${stats.staff.doctors || 0} On-site` },
-                  { label: "Nurses", val: `${stats.staff.nurses || 0} On-site` }
+                  { label: t('doctors'), val: `${formatNumber(stats.staff.doctors || 0, i18n.language)} ${t('onsite')}` },
+                  { label: t('nurses'), val: `${formatNumber(stats.staff.nurses || 0, i18n.language)} ${t('onsite')}` }
                ]}
                status={stats.staff.idle < 2 ? 'warning' : 'safe'}
                icon={Icons.Users}
                cssVariables={cssVariables}
+               language={i18n.language}
             />
             <ResourcePanel 
-               title="Key Supplies"
+               title={t('keySupplies')}
                mainValue={stats.oxygen}
                maxValue={100}
                unit="% O₂"
-               trend={activeScenario === 'Pollution' ? "Reorder Triggered" : "Stable Stock"}
+               trend={activeScenario === 'Pollution' ? t('reorderTriggered') : t('stableStock')}
                details={[
-                  { label: "PPE Units", val: stats.ppe.toString() },
-                  { label: "Meds", val: `${medicineStockPercentage}% Stock` }
+                  { label: t('ppeUnits'), val: formatNumber(stats.ppe, i18n.language) },
+                  { label: t('meds'), val: `${formatNumber(medicineStockPercentage, i18n.language)}% ${t('stock')}` }
                ]}
                status={stats.oxygen < 40 ? 'critical' : 'safe'}
                icon={Icons.Package}
                cssVariables={cssVariables}
+               language={i18n.language}
             />
             <ResourcePanel 
-               title="Ambulance Fleet"
+               title={t('ambulanceFleet')}
                mainValue={ambulanceData?.deployed || 8}
                maxValue={ambulanceData?.total || 12}
-               unit="Deployed"
+               unit={t('deployed')}
                trend={ambulanceData?.trend || "API integration pending"}
                details={[
-                  { label: "In-Transit", val: ambulanceData?.in_transit ? `${ambulanceData.in_transit} Units` : "N/A" },
-                  { label: "Maintenance", val: ambulanceData?.maintenance ? `${ambulanceData.maintenance} Unit${ambulanceData.maintenance !== 1 ? 's' : ''}` : "N/A" }
+                  { label: t('inTransit'), val: ambulanceData?.in_transit ? `${formatNumber(ambulanceData.in_transit, i18n.language)} ${t('units')}` : "N/A" },
+                  { label: t('maintenance'), val: ambulanceData?.maintenance ? `${formatNumber(ambulanceData.maintenance, i18n.language)} ${ambulanceData.maintenance !== 1 ? t('units') : t('unit')}` : "N/A" }
                ]}
                status={ambulanceData?.deployed ? (ambulanceData.deployed < 4 ? 'critical' : ambulanceData.deployed < 8 ? 'warning' : 'safe') : 'safe'}
                icon={Icons.Truck}
                cssVariables={cssVariables}
+               language={i18n.language}
             />
         </div>
     </div>
@@ -770,33 +1049,33 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const renderDecisions = () => (
     <div className="animate-slideIn h-full flex flex-col">
        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-display font-bold text-[var(--text-primary)]">AI Decisions & Recommendations</h2>
+          <h2 className="text-2xl font-display font-bold text-[var(--text-primary)]">{t('aiDecisions')}</h2>
           <div className="text-[10px] bg-yellow-400/10 text-yellow-400 px-3 py-1 rounded-full font-bold uppercase border border-yellow-400/20">
-             {recommendations.length} Pending Actions
+             {formatNumber(translatedRecommendations.length, i18n.language)} {t('pendingActions')}
           </div>
        </div>
        <div className="flex-1 overflow-y-auto no-scrollbar space-y-4">
-            {recommendations.length === 0 ? (
+            {translatedRecommendations.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-gray-500 text-sm text-center border border-[var(--border-subtle)] rounded-2xl bg-[var(--bg-surface)]">
                     <Icons.CheckCircle2 className="w-16 h-16 mb-4 opacity-20" />
-                    <p className="text-lg text-[var(--text-secondary)] mb-1">System Optimized</p>
-                    <p className="text-xs opacity-50">No critical actions required at this moment.</p>
+                    <p className="text-lg text-[var(--text-secondary)] mb-1">{t('systemOptimized')}</p>
+                    <p className="text-xs opacity-50">{t('noCriticalActions')}</p>
                 </div>
             ) : (
-                recommendations.map(rec => (
+                translatedRecommendations.map(rec => (
                     <div key={rec.id} className="bg-[var(--bg-surface-2)] border border-[var(--border-subtle)] p-6 rounded-2xl flex flex-col md:flex-row gap-6 items-start md:items-center justify-between group hover:border-[#00C2FF]/30 transition-all shadow-lg">
                         <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
                                 <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider flex items-center gap-1.5">
                                     <div className="w-2 h-2 rounded-full bg-[#00C2FF] shadow-[0_0_5px_#00C2FF]"></div>
-                                    {rec.agent} AGENT
+                                    {rec.agent} {t('agent')}
                                 </span>
-                                <span className="text-[10px] uppercase font-bold text-[#00C2FF] bg-[#00C2FF]/10 px-2 py-0.5 rounded border border-[#00C2FF]/20">High Impact</span>
+                                <span className="text-[10px] uppercase font-bold text-[#00C2FF] bg-[#00C2FF]/10 px-2 py-0.5 rounded border border-[#00C2FF]/20">{t('highImpact')}</span>
                             </div>
                             <h4 className="font-display font-bold text-[var(--text-primary)] text-lg mb-2">{rec.action}</h4>
                             <p className="text-[var(--text-secondary)] text-sm leading-relaxed">{rec.reason}</p>
                             <div className="mt-3 flex items-center gap-2 text-xs">
-                               <span className="text-gray-500">Expected Outcome:</span>
+                               <span className="text-gray-500">{t('expectedOutcome')}</span>
                                <span className="text-green-400 font-bold">{rec.impact}</span>
                             </div>
                         </div>
@@ -807,7 +1086,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 }}
                                 className="flex-1 md:flex-none py-3 px-6 bg-[var(--element-bg)] hover:bg-red-500/20 hover:text-red-500 text-[var(--text-secondary)] rounded-xl text-xs font-bold transition-all border border-[var(--border-subtle)] uppercase tracking-wide"
                             >
-                                Reject
+                                {t('reject')}
                             </button>
                             <button 
                                 onClick={() => {
@@ -815,7 +1094,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 }}
                                 className="flex-1 md:flex-none py-3 px-8 bg-[#00C2FF] hover:bg-[#00C2FF]/80 text-black rounded-xl text-xs font-bold transition-all shadow-[0_0_20px_rgba(0,194,255,0.3)] uppercase tracking-wide"
                             >
-                                Approve
+                                {t('approve')}
                             </button>
                         </div>
                     </div>
@@ -827,30 +1106,30 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const renderAdvisory = () => (
     <div className="animate-slideIn h-full flex flex-col">
-       <h2 className="text-2xl font-display font-bold text-[var(--text-primary)] mb-6">Advisory & Notification Center</h2>
+       <h2 className="text-2xl font-display font-bold text-[var(--text-primary)] mb-6">{t('advisoryNotification')}</h2>
        
        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full">
            {/* Active Alerts List */}
            <div className="bg-[var(--bg-surface)] border border-[var(--border-main)] rounded-2xl p-6 flex flex-col transition-colors">
                <div className="flex items-center gap-2 mb-6">
                    <Icons.AlertCircle className="w-5 h-5 text-red-400" />
-                   <h3 className="font-bold text-[var(--text-primary)]">Active System Alerts</h3>
-                   {alerts.length > 0 && (
+                   <h3 className="font-bold text-[var(--text-primary)]">{t('activeSystemAlerts')}</h3>
+                   {translatedAlerts.length > 0 && (
                        <span className="ml-auto text-[10px] bg-red-500/10 text-red-400 px-2 py-1 rounded-full font-bold border border-red-500/20">
-                           {alerts.length} Active
+                           {formatNumber(translatedAlerts.length, i18n.language)} {t('active')}
                        </span>
                    )}
                </div>
                <div className="space-y-4 overflow-y-auto pr-2 no-scrollbar flex-1">
-                   {alerts.length === 0 && (
+                   {translatedAlerts.length === 0 && (
                        <div className="text-gray-500 text-sm italic flex items-center justify-center h-full">
                            <div className="text-center">
                                <Icons.CheckCircle2 className="w-12 h-12 mx-auto mb-2 opacity-20" />
-                               <p>No active system alerts.</p>
+                               <p>{t('noActiveAlerts')}</p>
                            </div>
                        </div>
                    )}
-                   {alerts.map(alert => {
+                   {translatedAlerts.map(alert => {
                        const isAgentAlert = alert.id >= 100;
                        const isCritical = alert.type === 'critical';
                        const bgColor = isCritical ? 'bg-red-500/5' : 'bg-orange-500/5';
@@ -868,7 +1147,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                        <h4 className={`${titleColor} font-bold text-sm`}>{alert.title}</h4>
                                        {isAgentAlert && (
                                            <span className="text-[9px] uppercase font-bold tracking-wider text-gray-500 bg-[var(--element-bg)] px-2 py-0.5 rounded">
-                                               AI Agent
+                                               {t('aiAgent')}
                                            </span>
                                        )}
                                    </div>
@@ -877,7 +1156,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                        <span className="text-[10px] text-gray-600 uppercase font-mono">{alert.timestamp}</span>
                                        {isCritical && (
                                            <span className="text-[9px] uppercase font-bold text-red-500 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">
-                                               Critical
+                                               {t('critical')}
                                            </span>
                                        )}
                                    </div>
@@ -890,14 +1169,14 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
            {/* Agent Recommendations */}
            <div className="space-y-6 overflow-y-auto pr-2 no-scrollbar">
-                {recommendations.length === 0 ? (
+                {translatedRecommendations.length === 0 ? (
                     <div className="bg-[var(--bg-surface-2)] border border-[var(--border-main)] rounded-2xl p-8 flex flex-col items-center justify-center text-center h-full min-h-[300px]">
                         <Icons.CheckCircle2 className="w-16 h-16 mb-4 opacity-20 text-[var(--text-secondary)]" />
-                        <h4 className="text-[var(--text-primary)] font-bold mb-2">All Systems Optimal</h4>
-                        <p className="text-[var(--text-secondary)] text-sm">No active agent recommendations at this time.</p>
+                        <h4 className="text-[var(--text-primary)] font-bold mb-2">{t('allSystemsOptimal')}</h4>
+                        <p className="text-[var(--text-secondary)] text-sm">{t('noActiveRecommendations')}</p>
                     </div>
                 ) : (
-                    recommendations.map((rec, index) => {
+                    translatedRecommendations.map((rec, index) => {
                         const colors = [
                             { border: 'border-[#00C2FF]/30', bg: 'bg-[#00C2FF]/10', icon: 'text-[#00C2FF]', agent: 'bg-[#00C2FF]/20 text-[#00C2FF]' },
                             { border: 'border-green-500/30', bg: 'bg-green-500/10', icon: 'text-green-400', agent: 'bg-green-500/20 text-green-400' },
@@ -913,20 +1192,20 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                         <Icons.Zap className={`w-5 h-5 ${colorScheme.icon}`} />
                                     </div>
                                     <span className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 rounded-full ${colorScheme.agent}`}>
-                                        {rec.agent} Agent
+                                        {rec.agent} {t('agent')}
                                     </span>
                                 </div>
                                 <h4 className="text-[var(--text-primary)] font-bold text-lg mb-2">{rec.action}</h4>
                                 <div className="space-y-2 mb-4">
                                     {rec.reason && (
                                         <div className="flex items-start gap-2">
-                                            <span className="text-[10px] uppercase font-bold text-gray-500 min-w-[60px]">Reason:</span>
+                                            <span className="text-[10px] uppercase font-bold text-gray-500 min-w-[60px]">{t('reason')}</span>
                                             <p className="text-[var(--text-secondary)] text-xs leading-relaxed flex-1">{rec.reason}</p>
                                         </div>
                                     )}
                                     {rec.impact && (
                                         <div className="flex items-start gap-2">
-                                            <span className="text-[10px] uppercase font-bold text-gray-500 min-w-[60px]">Impact:</span>
+                                            <span className="text-[10px] uppercase font-bold text-gray-500 min-w-[60px]">{t('impact')}</span>
                                             <p className={`text-xs leading-relaxed flex-1 font-medium ${colorScheme.icon}`}>{rec.impact}</p>
                                         </div>
                                     )}
@@ -938,7 +1217,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                         }}
                                         className="flex-1 py-2 px-4 bg-[var(--element-bg)] hover:bg-red-500/20 hover:text-red-400 text-[var(--text-secondary)] rounded-lg text-xs font-bold transition-all border border-[var(--border-subtle)] uppercase"
                                     >
-                                        Dismiss
+                                        {t('dismiss')}
                                     </button>
                                     <button 
                                         onClick={() => {
@@ -946,7 +1225,7 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                         }}
                                         className={`flex-1 py-2 px-4 ${colorScheme.bg} hover:opacity-80 ${colorScheme.icon} rounded-lg text-xs font-bold transition-all shadow-lg uppercase`}
                                     >
-                                        Implement
+                                        {t('implement')}
                                     </button>
                                 </div>
                             </div>
@@ -998,28 +1277,43 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <div className="bg-[var(--bg-surface-2)] border border-[var(--border-main)] rounded-2xl p-6 transition-colors">
                 <h3 className="text-[var(--text-primary)] font-bold mb-4 flex items-center gap-2">
                     <Icons.Mic className="w-5 h-5 text-[#00C2FF]" />
-                    Voice Module
+                    {t('voiceModule') || 'Voice Module'}
                 </h3>
                 <div className="flex items-center justify-between mb-4">
                      <div className="flex flex-col">
-                        <span className="text-[var(--text-secondary)] text-sm font-medium">Always-on Assistant</span>
-                        <span className="text-gray-500 text-xs">Allows voice commands for navigation and queries.</span>
+                        <span className="text-[var(--text-secondary)] text-sm font-medium">{t('alwaysOnAssistant') || 'Always-on Assistant'}</span>
+                        <span className="text-gray-500 text-xs">{t('voiceModuleDesc') || 'Multilingual voice commands and text-to-speech.'}</span>
                      </div>
                      <button 
                         onClick={() => setIsVoiceActive(!isVoiceActive)}
                         className={`w-12 h-7 rounded-full relative transition-all duration-300 ${isVoiceActive ? 'bg-[#00C2FF]' : 'bg-[var(--element-bg)]'}`}
+                        aria-label={isVoiceActive ? t('disable') : t('enable')}
                     >
                         <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-md transition-all duration-300 ${isVoiceActive ? 'left-6' : 'left-1'}`}></div>
                     </button>
                 </div>
                 {isVoiceActive && (
-                    <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-4 flex items-center gap-4 animate-slideIn">
-                        <div className="h-4 flex items-center gap-0.5">
-                            {[...Array(5)].map((_, i) => (
-                                <div key={i} className="w-1 bg-[#00C2FF] rounded-full animate-music" style={{animationDuration: Math.random() * 0.5 + 0.3 + 's', height: '100%'}}></div>
-                            ))}
-                        </div>
-                        <span className="text-xs text-[#00C2FF] font-mono">Microphone Active - Listening...</span>
+                    <div className="animate-slideIn">
+                        <VoiceControl 
+                            continuous={false}
+                            autoSpeak={false}
+                            onCommand={(command) => {
+                                console.log('Voice command received:', command);
+                                // Handle voice commands (e.g., navigation, queries)
+                                const lowerCommand = command.toLowerCase();
+                                if (lowerCommand.includes('overview') || lowerCommand.includes('अवलोकन') || lowerCommand.includes('आढावा')) {
+                                    setActiveTab('overview');
+                                } else if (lowerCommand.includes('resource') || lowerCommand.includes('संसाधन')) {
+                                    setActiveTab('resources');
+                                } else if (lowerCommand.includes('decision') || lowerCommand.includes('निर्णय')) {
+                                    setActiveTab('decisions');
+                                } else if (lowerCommand.includes('advisor') || lowerCommand.includes('सलाह') || lowerCommand.includes('सल्ला')) {
+                                    setActiveTab('advisory');
+                                } else if (lowerCommand.includes('setting') || lowerCommand.includes('सेटिंग')) {
+                                    setActiveTab('settings');
+                                }
+                            }}
+                        />
                     </div>
                 )}
             </div>
@@ -1067,11 +1361,11 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             {/* Nav Items */}
             <nav className="flex-1 py-6 space-y-2 px-2 lg:px-4 overflow-y-auto no-scrollbar">
-                <SidebarItem id="overview" label="Overview" icon={Icons.LayoutDashboard} active={activeTab === 'overview'} onClick={setActiveTab} />
-                <SidebarItem id="resources" label="Resources" icon={Icons.Activity} active={activeTab === 'resources'} onClick={setActiveTab} />
-                <SidebarItem id="decisions" label="Decisions" icon={Icons.Zap} active={activeTab === 'decisions'} onClick={setActiveTab} />
-                <SidebarItem id="advisory" label="Advisories" icon={Icons.MessageSquare} active={activeTab === 'advisory'} onClick={setActiveTab} />
-                <SidebarItem id="settings" label="Settings" icon={Icons.Settings} active={activeTab === 'settings'} onClick={setActiveTab} />
+                <SidebarItem id="overview" label={t('overview')} icon={Icons.LayoutDashboard} active={activeTab === 'overview'} onClick={setActiveTab} />
+                <SidebarItem id="resources" label={t('resources')} icon={Icons.Activity} active={activeTab === 'resources'} onClick={setActiveTab} />
+                <SidebarItem id="decisions" label={t('decisions')} icon={Icons.Zap} active={activeTab === 'decisions'} onClick={setActiveTab} />
+                <SidebarItem id="advisory" label={t('advisories')} icon={Icons.MessageSquare} active={activeTab === 'advisory'} onClick={setActiveTab} />
+                <SidebarItem id="settings" label={t('settings')} icon={Icons.Settings} active={activeTab === 'settings'} onClick={setActiveTab} />
             </nav>
 
             {/* Bottom Actions */}
@@ -1099,6 +1393,8 @@ const Dashboard: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
                 {/* Global Status */}
                 <div className="flex items-center gap-4">
+                    {/* Language Selector */}
+                    <LanguageSelector />
                     {/* WebSocket Connection Status */}
                     <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${
                         isConnected 
@@ -1184,7 +1480,8 @@ const ResourcePanel: React.FC<{
   status: 'safe' | 'warning' | 'critical'; 
   icon: any;
   cssVariables?: React.CSSProperties;
-}> = ({ title, mainValue, maxValue, unit, trend, details, status, icon: Icon, cssVariables }) => {
+  language?: string;
+}> = ({ title, mainValue, maxValue, unit, trend, details, status, icon: Icon, cssVariables, language = 'en' }) => {
     const percentage = (mainValue / maxValue) * 100;
     const color = status === 'critical' ? 'bg-red-500' : status === 'warning' ? 'bg-orange-500' : 'bg-[#00C2FF]';
     const textColor = status === 'critical' ? 'text-red-500' : status === 'warning' ? 'text-orange-500' : 'text-[#00C2FF]';
@@ -1201,7 +1498,7 @@ const ResourcePanel: React.FC<{
             <div className="mb-4">
                 <div className="text-[var(--text-secondary)] text-xs uppercase tracking-wider font-bold mb-1">{title}</div>
                 <div className="text-3xl font-display font-bold text-[var(--text-primary)] mb-2">
-                    {mainValue} <span className="text-sm text-gray-500 font-normal">/ {maxValue} {unit}</span>
+                    {formatNumber(mainValue, language)} <span className="text-sm text-gray-500 font-normal">/ {formatNumber(maxValue, language)} {unit}</span>
                 </div>
                 <div className="w-full h-1.5 bg-[var(--element-bg)] rounded-full overflow-hidden">
                     <div className={`h-full rounded-full transition-all duration-1000 ${color}`} style={{ width: `${percentage}%` }}></div>
